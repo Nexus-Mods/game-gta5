@@ -1,0 +1,47 @@
+{
+  "name": "game-gta5",
+  "description": "Vortex support for Grand Theft Auto V",
+  "version": "0.0.1",
+  "author": "Black Tree Gaming Ltd.",
+  "license": "GPL-3.0",
+  "scripts": {
+    "webpack": "node ./node_modules/webpack/bin/webpack --config webpack.config.js --display-error-details --progress --profile --color",
+    "copy_assets": "copyfiles -f assets/* dist && copyfiles -f assets/content/* dist/content",
+    "build": "yarn run webpack && yarn run copy_assets && extractInfo"
+  },
+  "babel": {
+    "presets": [
+      "es2015"
+    ]
+  },
+  "devDependencies": {
+    "@types/bluebird": "^3.5.28",
+    "@types/node": "^10.3.4",
+    "@types/react-bootstrap": "^0.32.10",
+    "@types/react-dnd": "^2.0.34",
+    "@types/react-dom": "^16.0.6",
+    "@types/redux": "^3.6.0",
+    "@types/redux-thunk": "^2.1.0",
+    "@types/semver": "^5.5.0",
+    "@types/xml2js": "^0.4.5",
+    "babel-core": "^6.26.3",
+    "babel-loader": "^7.1.4",
+    "bluebird": "^3.7.1",
+    "copyfiles": "^2.1.1",
+    "electron": "^4.2.10",
+    "exe-version": "Nexus-Mods/node-exe-version",
+    "fs-extra": "^8.1.0",
+    "i18next": "^15.0.6",
+    "react-dnd": "^7.4.5",
+    "react-i18next": "^10.4.0",
+    "react-redux": "^5.0.7",
+    "redux-act": "^1.7.4",
+    "semver": "^5.5.0",
+    "ts-loader": "^5.3.3",
+    "typescript": "^3.6.4",
+    "vortex-api": "Nexus-Mods/vortex-api",
+    "webpack": "^4.29.6",
+    "webpack-cli": "^3.3.9",
+    "xml2js": "^0.4.22"
+  }
+}

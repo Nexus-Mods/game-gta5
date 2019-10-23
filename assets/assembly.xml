@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package version="2.1" id="{e603d8d4-d63f-4c1c-ad44-9eb8828b16a0}" target="Five">
+  <metadata>
+    <name>Vortex Asset Bundle</name>
+      <version>
+        <major>1</major>
+        <minor>0</minor>
+      </version>
+      <author>
+        <displayName>A soulless algorithm</displayName>
+      </author>
+      <description>
+        <![CDATA[This is a bundle of all mods you have enabled inside Vortex.&]]>
+      </description>
+  </metadata>
+
+  <colors>
+    <headerBackground useBlackTextColor="False">$FF23366A</headerBackground>
+    <iconBackground>$FF3b5998</iconBackground>
+  </colors>
+
+  <content></content>
+</package>
