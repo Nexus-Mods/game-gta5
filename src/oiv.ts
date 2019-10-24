@@ -153,21 +153,27 @@ export function crowbar(obj: any, path: (string | number)[], def: any): any {
   return cur;
 }
 
+export interface IOIVOptions {
+  rpfVersion: 'RPF7';
+}
+
 class OIV {
   private mData: IOIVFormat;
-  constructor(parsed: IOIVFormat) {
+  private mOptions: IOIVOptions;
+  constructor(parsed: IOIVFormat, options: IOIVOptions) {
     this.mData = parsed;
+    this.mOptions = options;
   }
 
-  public static fromFile(filePath: string): Promise<OIV> {
+  public static fromFile(filePath: string, options: IOIVOptions): Promise<OIV> {
     return Promise.resolve(fs.readFile(filePath, { encoding: 'utf8' }))
-      .then(OIV.fromData);
+      .then(data => OIV.fromData(data, options));
   }
 
-  public static fromData(input: string): Promise<OIV> {
+  public static fromData(input: string, options: IOIVOptions): Promise<OIV> {
     return parseStringPromise(input, { trim: true })
       .then(parsed => {
-        return Promise.resolve(new OIV(parsed));
+        return Promise.resolve(new OIV(parsed, options));
       });
   }
 
@@ -183,8 +189,14 @@ class OIV {
     return fs.writeFile(filePath, this.toString(), { encoding: 'utf-8' });
   }
 
-  public merge(oicPath: string, sourcePrefix: string): Promise<void> {
-    return OIV.fromFile(path.join(oicPath, 'assembly.xml'))
+  /**
+   * merge all content changes from one oiv into this
+   * @param oivPath path to the other oiv
+   * @param sourcePrefix gets pretended to all "add" source paths. Useful when the content directory gets
+   *                     rearranged
+   */
+  public merge(oivPath: string, sourcePrefix: string): Promise<void> {
+    return OIV.fromFile(path.join(oivPath, 'assembly.xml'), this.mOptions)
       .then(oiv => {
         const lhs = this.mData.package.content[0];
         const rhs = oiv.mData.package.content[0];
@@ -213,17 +225,14 @@ class OIV {
       });
   }
 
-  public addDLC(name: string, archiveName: string, custom: boolean) {
-    const archive: IOIVFormatArchive = this.ensureArchive(archiveName);
+  /**
+   * set a dlc to be loaded
+   * @param name name of the dlc
+   */
+  public addDLC(name: string) {
+    const archive: IOIVFormatArchive = this.ensureArchive(path.join('update', 'update.rpf'));
 
-    const fileAdd = crowbar(archive, ['add'], []);
-
-    // if there is no dlclist already being added, add it now
-    if (custom && fileAdd.find(iter => xmlStringEq(iter, 'dlclist.xml')) === undefined) {
-      fileAdd.push({ $: { source: 'dlclist.xml' }, _: 'dlclist.xml' });
-    }
-
-    const dlcListPath = custom ? 'dlclist.xml' : path.join('common', 'data', 'dlclist.xml');
+    const dlcListPath = path.join('common', 'data', 'dlclist.xml');
 
     const xmlEdits = setdefault<IOIVFormatXML[]>(archive, 'xml', []);
     let dlclist = xmlEdits.find(iter => iter.$.path === dlcListPath);
@@ -236,12 +245,6 @@ class OIV {
       }) - 1];
     }
 
-    if (!custom) {
-      // make sure we don't introduce duplicates. On the custom file we can skip this since
-      // it gets re-written every time anyway
-      // dlclist.remove.push({ $: { xpath: `/SMandatoryPacksData/Paths/item[@id='${name}']` } })
-    }
-
     dlclist.add.push({
       $: { xpath: '/SMandatoryPacksData/Paths' },
       item: [ {
@@ -251,6 +254,12 @@ class OIV {
     });
   }
 
+  /**
+   * add a file to the archive
+   * @param inPath path to the file within the content directory of the oiv
+   * @param outPath path to the file in the target archive
+   * @param archiveName name of the archive to add to
+   */
   public addFile(inPath: string, outPath: string, archiveName: string) {
     let archive = this.ensureArchive(archiveName);
     const segments: string[] = outPath.split(path.sep).reduce((prev, iter) => {
@@ -267,7 +276,7 @@ class OIV {
       archive = subArchives.find(iter => iter.$.path === segments[i]);
       if (archive === undefined) {
         archive = subArchives[subArchives.push({
-          $: { path: segments[i], createIfNotExist: 'True', type: 'RPF7' },
+          $: { path: segments[i], createIfNotExist: 'True', type: this.mOptions.rpfVersion },
         }) - 1];
       }
     }
@@ -305,7 +314,7 @@ class OIV {
     let arch = archives.find(iter => iter.$.path === path);
     if (arch === undefined) {
       arch = archives[archives.push({
-        $: { path, createIfNotExist: 'True', type: 'RPF7' },
+        $: { path, createIfNotExist: 'True', type: this.mOptions.rpfVersion },
       }) - 1];
     }
     return arch;

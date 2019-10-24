@@ -26,7 +26,9 @@ const getAssetExts = (() => {
 
   return () => {
     if (result === undefined) {
-      result = Array.from(new Set(Object.keys(getNameMap()).map(fileName => path.extname(fileName))));
+      result = Array.from(new Set(Object.keys(getNameMap())
+        .map(fileName => path.extname(fileName))))
+        .filter(fileExt => ['', '.txt'].indexOf(fileExt) === -1);
     }
 
     return result;
@@ -40,36 +42,16 @@ function findGame(): Promise<string> {
 
 function modPath(): string {
   return path.join('mods', 'source', 'content');
-  // return path.join('mods', 'update', 'x64', 'dlcpacks');
 }
 
 function openIVPath(): string {
   return path.join(process.env.LOCALAPPDATA, 'New Technology Studio', 'Apps', 'OpenIV');
 }
 
-const BASE_RDFS = [
-/*
-  'common.rpf',
-  'x64e.rpf',
-  'update\\update.rpf',
-  'x64\\audio\\sfx\\SCRIPT.rpf',
-  'update\\x64\\dlcpacks\\mpheist\\dlc.rpf',
-*/
-];
-
-function ensureCopy(basePath: string, rdfPath: string) {
-  return fs.statAsync(path.join(basePath, 'mods', rdfPath))
-        .then(() => Promise.resolve())
-        .catch({ code: 'ENOENT' }, () =>
-          fs.copyAsync(path.join(basePath, rdfPath),
-                       path.join(basePath, 'mods', rdfPath)))
-}
-
 function prepareForModding(discovery: types.IDiscoveryResult): Promise<void> {
-  return fs.ensureDirWritableAsync(path.join(discovery.path, modPath()),
-                                   () => Promise.resolve())
-    // copy the source rdf files that might be modified
-    .then(() => Promise.map(BASE_RDFS, baseRDF => ensureCopy(discovery.path, baseRDF)))
+  return fs.ensureDirWritableAsync(path.join(discovery.path, modPath()), () => Promise.resolve())
+    .then(() => fs.ensureDirWritableAsync(
+      path.join(discovery.path, 'mods', 'update', 'x64', 'dlcpacks'), () => Promise.resolve()))
     .then(() => undefined);
 }
 
@@ -137,7 +119,9 @@ function genCheckScriptHookV(api: types.IExtensionApi) {
         automaticFix: () =>
           (api.emitAndAwait as any)('browse-for-download', 'http://www.dev-c.com/gtav/scripthookv/',
             'Download the latest version')
-            .then(url => toPromise<string>(cb => api.events.emit('start-download', [url], {}, undefined, cb)))
+            .then(url => url === undefined
+              ? Promise.reject(new util.UserCanceled())
+              : toPromise<string>(cb => api.events.emit('start-download', [url], {}, undefined, cb)))
             .then((dlId: string) => toPromise(cb => api.events.emit('start-install-download', dlId, true, cb)))
             .then((modId: string) => {
               const profile = selectors.activeProfile(api.store.getState());
@@ -251,9 +235,16 @@ function makeGetASIPath(api: types.IExtensionApi) {
 }
 
 function makeTestASI(api: types.IExtensionApi) {
+  const ext = input => path.extname(input).toLowerCase();
   return (installInstructions: types.IInstruction[]): Promise<boolean> => {
-    return Promise.resolve(installInstructions.find(iter =>
-      path.extname(iter.destination).toLowerCase() === '.asi') !== undefined);
+    const assetExts = getAssetExts();
+    const hasASI = installInstructions.find(iter =>
+      (iter.destination !== undefined)
+      && (ext(iter.destination) === '.asi')) !== undefined;
+    const hasAssets = installInstructions.find(iter =>
+      (assetExts.indexOf(ext(iter.destination)) !== -1)
+      || (ext(iter.destination) === '.rpf')) !== undefined;
+    return Promise.resolve(hasASI && !hasAssets);
   };
 }
 
@@ -271,20 +262,15 @@ function makeGetDLCPath(api: types.IExtensionApi) {
 
 function makeTestDLC(api: types.IExtensionApi) {
   return (installInstructions: types.IInstruction[]): Promise<boolean> => {
-    return Promise.resolve(installInstructions.find(iter =>
-      path.basename(iter.destination).toLowerCase() === 'dlc.rpf') !== undefined);
+    const hasDLC = installInstructions.find(iter =>
+      (iter.destination !== undefined)
+      && (path.basename(iter.destination).toLowerCase() === 'dlc.rpf')) !== undefined;
+    return Promise.resolve(hasDLC);
   };
 }
 
 function replacerTest(files: string[], gameId: string): Promise<types.ISupportedResult> {
-  let supported = false;
-  if (gameId === GAME_ID) {
-    // the mod is treated as a replacer if it contains any files we recognize as part of the base archives
-    supported = files.find(filePath => {
-      const knownFile = getNameMap()[path.basename(filePath)];
-      return knownFile !== undefined;
-    }) !== undefined;
-  }
+  let supported = gameId === GAME_ID;
 
   return Promise.resolve({
     supported,
@@ -296,37 +282,52 @@ function replacerTest(files: string[], gameId: string): Promise<types.ISupported
  * This installer restructures mods containing replacement for 
  */
 function replacerInstaller(files: string[]): Promise<types.IInstallResult> {
-  return Promise.resolve({
-    instructions: files
-      .filter(filePath => !filePath.endsWith(path.sep))
-      .map(filePath => {
-      const knownFiles = getNameMap()[path.basename(filePath)];
-      if (knownFiles === undefined) {
+  const fileInstructions = files
+    .filter(filePath => !filePath.endsWith(path.sep))
+    .map(filePath => {
+      const fileName = path.basename(filePath);
+      const knownFiles = getNameMap()[fileName];
+      if (knownFiles !== undefined) {
+        // replacer for a known file
+
+        let knownFile = knownFiles[0];
+        if (knownFiles.length > 1) {
+          // TODO: Could be multiple matches...
+          let knownUpdate = knownFiles.find(iter => iter.startsWith('update.rpf'));
+          if (knownUpdate !== undefined) {
+            knownFile = knownUpdate;
+          }
+          // TODO: Also, there might be multiple files, none of which is in update.rpf
+          //  common case is files existing in female and male variants
+        }
+
+        return {
+          type: 'copy' as any,
+          source: filePath,
+          destination: knownFile,
+        };
+      } else if ((['.dll', '.asi'].indexOf(path.extname(fileName)) !== -1)
+                 || (fileName === 'dlc.rpf')) {
+        // pull all script hooks and dlcs to the root (of their respective
+        // install location)
+        return {
+          type: 'copy',
+          source: filePath,
+          destination: fileName,
+        };
+      } else {
         return {
           type: 'copy',
           source: filePath,
           destination: filePath,
         };
       }
+    });
 
-      let knownFile = knownFiles[0];
-      if (knownFiles.length > 1) {
-        // TODO: Could be multiple matches...
-        let knownUpdate = knownFiles.find(iter => iter.startsWith('update.rpf'));
-        if (knownUpdate !== undefined) {
-          knownFile = knownUpdate;
-        }
-        // TODO: Also, there might be multiple files, none of which is in update.rpf
-        //  common case is files existing in female and male variants
-      }
-
-      return {
-        type: 'copy',
-        source: filePath,
-        destination: knownFile,
-      };
-    })
-  });
+  const result: types.IInstallResult = {
+    instructions: fileInstructions,
+  };
+  return Promise.resolve(result);
 }
 
 function mergeTest(game: types.IGame) {
@@ -346,10 +347,19 @@ function mergeTest(game: types.IGame) {
   };
 }
 
+function isLatin1(input: string): boolean {
+  for (let i = 0; i < input.length; ++i) {
+    if (input.charCodeAt(i) > 255) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function merge(filePath: string, mergeDir: string): Promise<void> {
   const ext = path.extname(filePath).toLowerCase();
   const mergePath = path.join(mergeDir, 'assembly.xml');
-  return Promise.resolve(OIV.fromFile(mergePath))
+  return Promise.resolve(OIV.fromFile(mergePath, { rpfVersion: 'RPF7' }))
     .then(oiv => {
       let prom = Promise.resolve();
       if (ext === '.oiv') {
@@ -361,9 +371,13 @@ function merge(filePath: string, mergeDir: string): Promise<void> {
           () => Promise.reject(new util.ProcessCanceled('oiv password protected?')))
           .then(() => oiv.merge(tempPath, path.join(modName, 'content')));
       } else if (ext === '.rpf') {
-        //oiv.addDLC(path.basename(path.dirname(filePath)), RPF_PATH, true);
-        oiv.addDLC(path.basename(path.dirname(filePath)), 'update\\update.rpf', false);
+        oiv.addDLC(path.basename(path.dirname(filePath)));
       } else {
+        if (!isLatin1(filePath)) {
+          // hopefully this is only a readme or something
+          log('warn', 'File not included in vortex.oiv because OpenIV wouldn\'t support it', filePath);
+          return;
+        }
         const basePath = path.dirname(mergeDir);
         const relPath = path.relative(basePath, filePath);
         const split = relPath.split(path.sep);
@@ -376,7 +390,6 @@ function merge(filePath: string, mergeDir: string): Promise<void> {
         } else {
           rpfIdx = 1;
         }
-        // oiv.addFile(split.join(path.sep), split.slice(1).join(path.sep), RPF_PATH);
         oiv.addFile(split.join(path.sep), split.slice(rpfIdx).join(path.sep), rpfName);
       }
       return prom.then(() => oiv.save(mergePath));
@@ -385,6 +398,61 @@ function merge(filePath: string, mergeDir: string): Promise<void> {
 
 function sanitize(input: string): string {
   return input.replace(/[._\- ]/g, '');
+}
+
+function deploymentGate(api: types.IExtensionApi): Promise<void> {
+  return new Promise((resolve, reject) => {
+    api.sendNotification({
+      type: 'info',
+      message: 'You have to deploy before you play the game',
+      noDismiss: true,
+      actions: [{
+        title: 'Deploy now',
+        action: dismiss => { dismiss(); resolve(); },
+      }, {
+        title: 'Later',
+        action: dismiss => {
+          dismiss();
+          reject(new util.UserCanceled());
+          api.store.dispatch(actions.setDeploymentNecessary(GAME_ID, true));
+        },
+      }],
+    });
+  });
+}
+
+/**
+ * clean out everything in the mods directory except for the files deployed for
+ * the default mod type.
+ * This is to ensure the game rpfs are reset so we don't carry over changes from
+ * previous deployments.
+ * TODO: currently this also deletes the dlc.rpfs from the gta5dlc mod type.
+ *   they will just get redeployed though so no biggy
+ */
+function cleanMods(discovery: types.IDiscoveryResult): Promise<void> {
+  const basePath = path.join(discovery.path, 'mods');
+  return fs.readdirAsync(basePath)
+    .filter((fileName: string) => fileName !== 'source')
+    .then((files: string[]) =>
+      Promise.map(files, fileName => fs.removeAsync(path.join(basePath, fileName))))
+    .then(() => prepareForModding(discovery));
+}
+
+/**
+ * remove the oivs that were extracted so we could merge them into the master oiv
+ */
+function removeTempOIVs(discovery: types.IDiscoveryResult): Promise<void> {
+  const basePath = path.join(discovery.path, 'mods', 'source');
+  return fs.readdirAsync(basePath)
+    .filter((fileName: string) => {
+      if (path.extname(fileName) !== '.oiv') {
+        return Promise.resolve(false);
+      } else {
+        return fs.statAsync(path.join(basePath, fileName)).then(stats => stats.isDirectory());
+      }
+    })
+    .then((files: string[]) =>
+      Promise.map(files, fileName => fs.removeAsync(path.join(basePath, fileName))));
 }
 
 function main(context: types.IExtensionContext) {
@@ -420,8 +488,10 @@ function main(context: types.IExtensionContext) {
     details: {
       steamAppId: 271590,
       stopPatterns: ['[^/]*\\.rpf', '[^/]*\\.asi'],
+      supportsSymlinks: false,
     },
-  });
+    deploymentGate: () => deploymentGate(context.api),
+  } as any);
 
   // verify scripthook and openiv are installed and up-to-date
   context.registerTest('scripthookv-current', 'gamemode-activated',
@@ -452,11 +522,28 @@ function main(context: types.IExtensionContext) {
     {});
 
   context.registerMerge(mergeTest, merge, '');
-  context.registerMerge(mergeTest, merge, 'gta5dlc');
 
   context.registerInstaller('gta5-mod', 25, replacerTest, replacerInstaller);
 
   context.once(() => {
+    context.api.onAsync('will-deploy', (profileId: string) => {
+      const state = context.api.store.getState();
+
+      const profile: types.IProfile = selectors.profileById(state, profileId);
+      if (profile.gameId !== GAME_ID) {
+        return Promise.resolve();
+      }
+
+      const discovery: types.IDiscoveryResult = selectors.discoveryByGame(state, GAME_ID);
+      if ((discovery === undefined) || (discovery.path === undefined)) {
+        // this check shouldn't be necessary but whatevs...
+        return Promise.resolve();
+      }
+
+      // clean the entire output directory to ensure the rpfs that openiv copied over get reset
+      return cleanMods(discovery);
+    });
+
     context.api.onAsync('did-deploy',
                         (profileId: string, deployment: any, progress: (title: string) => void) => {
       const state = context.api.store.getState();
@@ -476,11 +563,25 @@ function main(context: types.IExtensionContext) {
       const sZip = new (util as any).SevenZip();
       const basePath = path.join(discovery.path, 'mods', 'source');
       const assemblyPath = path.join(basePath, 'content', 'assembly.xml');
-      return Promise.resolve(OIV.fromFile(assemblyPath))
+      // wrap up the assembly.xml file
+      return Promise.resolve(OIV.fromFile(assemblyPath, { rpfVersion: 'RPF7' }))
         .then(oiv => {
-          // oiv.addDLC('vortex', path.join('update', 'update.rpf'), false);
-          return oiv.save(assemblyPath);
+          const dlcpacksPath = path.join(discovery.path, 'mods', 'update', 'x64', 'dlcpacks');
+          return fs.readdirAsync(dlcpacksPath)
+            .filter(dlcPath => {
+              if (dlcPath === 'vortex') {
+                return Promise.resolve(false);
+              }
+              return fs.statAsync(path.join(dlcpacksPath, dlcPath)).then(stat => stat.isDirectory());
+            })
+            .then(dlcPaths => {
+              dlcPaths.forEach(dlcPath => oiv.addDLC(dlcPath));
+              oiv.addFile('frontend.ytd', path.join('x64', 'textures', 'frontend.ytd'), path.join('update', 'update.rpf'));
+            })
+            .then(() => oiv.save(assemblyPath));
         })
+        .then(() => fs.copyAsync(path.join(__dirname, 'content', 'frontend.ytd'),
+                                 path.join(discovery.path, modPath(), 'frontend.ytd')))
         .then(() => sZip.add(path.join(discovery.path, 'vortex.oiv.zip'), [
             assemblyPath,
             path.join(__dirname, 'content'),
@@ -499,8 +600,7 @@ function main(context: types.IExtensionContext) {
           { label: 'Continue' },
         ]))
         .then((result: types.IDialogResult) => result.action === 'Continue'
-          ? fs.removeAsync(path.join(discovery.path, 'mods', RPF_PATH))
-            .catch({ code: 'ENOENT' }, () => null)
+          ? removeTempOIVs(discovery)
             .then(() => runOpenIV(context.api))
           : Promise.reject(new util.UserCanceled()))
         .catch(util.UserCanceled, err => Promise.resolve(undefined));
