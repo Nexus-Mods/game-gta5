@@ -2,10 +2,6 @@
 # yarn lockfile v1
 
 
-"7z-bin@Nexus-Mods/7z-bin":
-  version "19.0.0-r2"
-  resolved "https://codeload.github.com/Nexus-Mods/7z-bin/tar.gz/ca0ff99f253c7bba8234d076d8ad7a028506603d"
-
 "@babel/runtime@^7.1.2", "@babel/runtime@^7.3.1":
   version "7.6.3"
   resolved "https://registry.yarnpkg.com/@babel/runtime/-/runtime-7.6.3.tgz#935122c74c73d2240cafd32ddb5fc2a6cd35cf1f"
@@ -13,10 +9,26 @@
   dependencies:
     regenerator-runtime "^0.13.2"
 
-"@types/bluebird@^3.5.28":
+"@types/bluebird@*", "@types/bluebird@^3.5.28":
   version "3.5.28"
   resolved "https://registry.yarnpkg.com/@types/bluebird/-/bluebird-3.5.28.tgz#04c1a520ff076649236bc8ca21198542ce2bdb09"
   integrity sha512-0Vk/kqkukxPKSzP9c8WJgisgGDx5oZDbsLLWIP5t70yThO/YleE+GEm2S1GlRALTaack3O7U5OS5qEm7q2kciA==
+
+"@types/fs-extra-promise@^1.0.7":
+  version "1.0.8"
+  resolved "https://registry.yarnpkg.com/@types/fs-extra-promise/-/fs-extra-promise-1.0.8.tgz#ea8b68987479453315f5297ebdbf50705f66f4f8"
+  integrity sha512-78fjr//sdyyc4yDFL7zM7363bwGrtXU0Rvb+TYtLBm1asgA8aVdgNBSEHtf5ovX5Rffcw0ZuV32itygBT/6mcg==
+  dependencies:
+    "@types/bluebird" "*"
+    "@types/fs-extra" "^4"
+    "@types/node" "*"
+
+"@types/fs-extra@^4":
+  version "4.0.9"
+  resolved "https://registry.yarnpkg.com/@types/fs-extra/-/fs-extra-4.0.9.tgz#401bea3a7cdfb671c06d0a1083a8e534e92eb97d"
+  integrity sha512-dC9Y/GTlzrFRxoX3YMztrjcVQ6B8UAvMbx8pAa2B3hINuhB0hv++ufZVauZpG1l9U0rJznB25IFPvf5XtMcIvw==
+  dependencies:
+    "@types/node" "*"
 
 "@types/hoist-non-react-statics@^3.3.1":
   version "3.3.1"
@@ -607,7 +619,7 @@ binary-extensions@^1.0.0:
   resolved "https://registry.yarnpkg.com/binary-extensions/-/binary-extensions-1.13.1.tgz#598afe54755b2868a5330d2aff9d4ebb53209b65"
   integrity sha512-Un7MIEDdUC5gNpcGDV97op1Ywk748MpHcFTHoYs6qnj1Z3j7I53VG3nwZhKzoBZmbdRNnb6WRdFlwl7tSDuZGw==
 
-bluebird@^3.4.0, bluebird@^3.4.7, bluebird@^3.5.5, bluebird@^3.7.1:
+bluebird@^3.4.0, bluebird@^3.5.5, bluebird@^3.7.1:
   version "3.7.1"
   resolved "https://registry.yarnpkg.com/bluebird/-/bluebird-3.7.1.tgz#df70e302b471d7473489acf26a93d63b53f874de"
   integrity sha512-DdmyoGCleJnkbp3nkbxTLJ18rjDsE4yCggEwKNXkeV123sPNfOCYeDoeuOY+F2FrSjO1YXcTU+dsy96KMy+gcg==
@@ -2661,13 +2673,6 @@ nice-try@^1.0.4:
   version "1.0.5"
   resolved "https://registry.yarnpkg.com/nice-try/-/nice-try-1.0.5.tgz#a3378a7696ce7d223e88fc9b764bd7ef1089e366"
   integrity sha512-1nh45deeb5olNY7eX82BkPO7SSxR5SSYJiPTrTdFUVYwAl8CKMA5N9PjTYkHiRjisVcxcQ1HXdLhx2qxxJzLNQ==
-
-node-7z@Nexus-Mods/node-7z:
-  version "0.7.1"
-  resolved "https://codeload.github.com/Nexus-Mods/node-7z/tar.gz/005e81cbc03bd2f3bb926e0af52087b87bbdb251"
-  dependencies:
-    "7z-bin" Nexus-Mods/7z-bin
-    bluebird "^3.4.7"
 
 node-gyp@^5.0.0:
   version "5.0.5"

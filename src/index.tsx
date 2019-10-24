@@ -14,7 +14,7 @@ const getNameMap = (() => {
 
   return () => {
     if (result === undefined) {
-      result = JSON.parse(fs.readFileSync(path.join(__dirname, 'namemap.json')));
+      result = JSON.parse(fs.readFileSync(path.join(__dirname, 'namemap.json'), { encoding: 'utf-8' }));
     }
     return result;
   };
@@ -149,7 +149,7 @@ function genCheckOpenIV(api: types.IExtensionApi) {
     }
 
     return fs.statAsync(openIVPath())
-      .then(() => undefined)
+      .then(() => Promise.resolve(undefined))
       .catch({ code: 'ENOENT' }, () => {
         const result: types.ITestResult = {
           description: {
@@ -178,10 +178,10 @@ function genCheckOpenIV(api: types.IExtensionApi) {
                 ])
                   .then((result: types.IDialogResult) => {
                     if (result.action === 'Continue') {
-                      return util.opn(path.join(selectors.downloadPathForGame(GAME_ID), download.localPath), true)
-                        .catch(() => undefined);
+                      return util.opn(path.join(selectors.downloadPathForGame(state, GAME_ID), download.localPath), true)
+                        .catch(() => Promise.resolve(undefined));
                     } else {
-                      Promise.resolve();
+                      return Promise.resolve(undefined);
                     }
                   });
               })
@@ -206,7 +206,7 @@ function genCheckOpenIVASI(api: types.IExtensionApi) {
     }
 
     return fs.statAsync(path.join(discovery.path, 'OpenIV.asi'))
-      .then(() => undefined)
+      .then(() => Promise.resolve(undefined))
       .catch({ code: 'ENOENT' }, err => {
         const result: types.ITestResult = {
           description: {
@@ -435,7 +435,8 @@ function cleanMods(discovery: types.IDiscoveryResult): Promise<void> {
     .filter((fileName: string) => fileName !== 'source')
     .then((files: string[]) =>
       Promise.map(files, fileName => fs.removeAsync(path.join(basePath, fileName))))
-    .then(() => prepareForModding(discovery));
+    .then(() => prepareForModding(discovery))
+    .then(() => Promise.resolve());
 }
 
 /**
@@ -452,7 +453,8 @@ function removeTempOIVs(discovery: types.IDiscoveryResult): Promise<void> {
       }
     })
     .then((files: string[]) =>
-      Promise.map(files, fileName => fs.removeAsync(path.join(basePath, fileName))));
+      Promise.map(files, fileName => fs.removeAsync(path.join(basePath, fileName))))
+    .then(() => Promise.resolve());
 }
 
 function main(context: types.IExtensionContext) {
