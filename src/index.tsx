@@ -3,8 +3,9 @@ import OIV from './oiv';
 
 import * as Promise from 'bluebird';
 import getExeVersion from 'exe-version';
-import { actions, fs, log, util, types, selectors } from 'vortex-api';
 import * as path from 'path';
+import turbowalk from 'turbowalk';
+import { actions, fs, log, util, types, selectors } from 'vortex-api';
 
 const GAME_ID = 'gta5';
 const RPF_PATH = path.join('update', 'x64', 'dlcpacks', 'vortex', 'dlc.rpf');
@@ -429,14 +430,21 @@ function deploymentGate(api: types.IExtensionApi): Promise<void> {
  * TODO: currently this also deletes the dlc.rpfs from the gta5dlc mod type.
  *   they will just get redeployed though so no biggy
  */
-function cleanMods(discovery: types.IDiscoveryResult): Promise<void> {
+function cleanMods(discovery: types.IDiscoveryResult, whitelist: Set<string>): Promise<void> {
   const basePath = path.join(discovery.path, 'mods');
-  return fs.readdirAsync(basePath)
-    .filter((fileName: string) => fileName !== 'source')
-    .then((files: string[]) =>
-      Promise.map(files, fileName => fs.removeAsync(path.join(basePath, fileName))))
-    .then(() => prepareForModding(discovery))
-    .then(() => Promise.resolve());
+  const toRemove: string[] = [];
+  return turbowalk(basePath, entries => {
+    toRemove.push(...entries
+      .filter(iter => {
+        const fileName = path.basename(iter.filePath);
+        return !iter.isDirectory
+          && !fileName.startsWith('__')
+          && !whitelist.has(fileName);
+      })
+      .map(iter => iter.filePath));
+  })
+  .then(() => Promise.map(toRemove, filePath => fs.removeAsync(filePath)))
+  .then(() => prepareForModding(discovery));
 }
 
 /**
@@ -528,7 +536,7 @@ function main(context: types.IExtensionContext) {
   context.registerInstaller('gta5-mod', 25, replacerTest, replacerInstaller);
 
   context.once(() => {
-    context.api.onAsync('will-deploy', (profileId: string) => {
+    context.api.onAsync('will-deploy', (profileId: string, lastDeployment: { [typeId: string]: types.IDeployedFile[] }) => {
       const state = context.api.store.getState();
 
       const profile: types.IProfile = selectors.profileById(state, profileId);
@@ -542,8 +550,12 @@ function main(context: types.IExtensionContext) {
         return Promise.resolve();
       }
 
+      // list of files we deployed
+      const whiteList = new Set<string>([].concat(...Object.values(lastDeployment))
+        .map((entry: types.IDeployedFile) => path.basename(entry.relPath)));
+
       // clean the entire output directory to ensure the rpfs that openiv copied over get reset
-      return cleanMods(discovery);
+      return cleanMods(discovery, whiteList);
     });
 
     context.api.onAsync('did-deploy',

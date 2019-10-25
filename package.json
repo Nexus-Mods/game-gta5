@@ -38,6 +38,7 @@
     "redux-act": "^1.7.4",
     "semver": "^5.5.0",
     "ts-loader": "^5.3.3",
+    "turbowalk": "Nexus-Mods/node-turbowalk",
     "typescript": "^3.6.4",
     "vortex-api": "Nexus-Mods/vortex-api",
     "webpack": "^4.29.6",
