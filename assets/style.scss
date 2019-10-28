@@ -1,0 +1,13 @@
+#gta5-installer {
+  .modal-dialog {
+    width: 80vw;
+  }
+  .gta5-selection-container-outer {
+    min-height: 60vh;
+    overflow: auto;
+  }
+  th {
+    // ~ 20% of the dialog width
+    min-width: 16vw;
+  }
+}

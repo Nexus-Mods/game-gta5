@@ -1,4 +1,5 @@
 import GTA5Dashlet from './Dashlet';
+import InstallDialog, { IOptions, IInstallerDialogState } from './InstallDialog';
 import OIV from './oiv';
 
 import * as Promise from 'bluebird';
@@ -19,7 +20,6 @@ const getNameMap = (() => {
     }
     return result;
   };
-
 })();
 
 const getAssetExts = (() => {
@@ -286,56 +286,138 @@ function replacerTest(files: string[], gameId: string): Promise<types.ISupported
   });
 }
 
+interface IAmbiguousDestination {
+  source: string;
+  destination: string[];
+}
+
+interface IAmbiguousSource {
+  source: string[];
+  destination: string;
+}
+
+const installerState = util.makeReactive<IInstallerDialogState>({
+  options: [],
+  text: '',
+  labelKey: '',
+  labelChoices: '',
+  callback: undefined,
+});
+
+function invokeDialog(options: IOptions,
+                      text: string,
+                      labelKey: string,
+                      labelChoices: string)
+                      : Promise<Array<{ key: string, choice: string }>> {
+  return new Promise((resolve, reject) => {
+    installerState.options = options;
+    installerState.text = text;
+    installerState.labelKey = labelKey;
+    installerState.labelChoices = labelChoices;
+    installerState.callback = (err: Error, result: Array<{ key: string, choice: string }>) => {
+      installerState.callback = undefined;
+      if (err !== null) {
+        reject(err);
+      } else {
+        resolve(result);
+      }
+    }
+  });
+}
+
+function disambiguateDestination(input: IAmbiguousDestination[]): Promise<Array<{ source: string, destination: string }>> {
+  const { ambiguous, clear }: { ambiguous: IAmbiguousDestination[], clear: IAmbiguousDestination[] } =
+    input.reduce((prev, iter) => {
+      prev[iter.destination.length > 1 ? 'ambiguous' : 'clear'].push(iter);
+      return prev;
+    }, { ambiguous: [], clear: [] });
+
+  if (ambiguous.length === 0) {
+    return Promise.resolve(clear.map(iter => ({ source: iter.source, destination: iter.destination[0] })));
+  }
+
+  return invokeDialog(
+    ambiguous.map((iter) => ({ key: iter.source, options: iter.destination })),
+    'It\'s unclear where these files should be installed, there are multiple options.',
+    'Source',
+    'Destination',
+  ).map(iter => ({ source: iter.key, destination: iter.choice }))
+  .then(choices => [].concat(choices, clear.map(iter => ({ source: iter.source, destination: iter.destination[0] }))));
+}
+
+function disambiguateSource(input: IAmbiguousSource[]): Promise<Array<{ source: string, destination: string }>> {
+  const { ambiguous, clear }: { ambiguous: IAmbiguousSource[], clear: IAmbiguousSource[] } =
+    input.reduce((prev, iter) => {
+      prev[iter.source.length > 1 ? 'ambiguous' : 'clear'].push(iter);
+      return prev;
+    }, { ambiguous: [], clear: [] });
+
+  if (ambiguous.length === 0) {
+    return Promise.resolve(clear.map(iter => ({ source: iter.source[0], destination: iter.destination })));
+  }
+
+  return invokeDialog(
+    ambiguous.map((iter) => ({ key: iter.destination, options: iter.source })),
+    'Multiple files would be installed to the same destination, you have to pick which to keep.',
+    'Destination',
+    'Source',
+  ).map(iter => ({ destination: iter.key, source: iter.choice }))
+  .then(choices => [].concat(choices, clear.map(iter => ({ source: iter.source[0], destination: iter.destination }))));
+}
+
+function disambiguateInstall(input: IAmbiguousDestination[]): Promise<types.IInstruction[]> {
+  const group = (input: Array<{ source: string, destination: string }>) => {
+    const mapped = input.reduce((prev, iter) => {
+      if (prev[iter.destination] === undefined) {
+        prev[iter.destination] = [];
+      }
+      prev[iter.destination].push(iter.source);
+      return prev;
+    }, {});
+    return Object.keys(mapped).map(destination => ({ source: mapped[destination], destination }));
+  }
+
+  return disambiguateDestination(input)
+    .then((choices: Array<{ source: string, destination: string }>) => disambiguateSource(group(choices)))
+    .then((choices: Array<{ source: string, destination: string }>) => 
+      choices.map(iter => ({ ...iter, type: 'copy' })));
+}
+
 /**
  * This installer restructures mods containing replacement for 
  */
 function replacerInstaller(files: string[]): Promise<types.IInstallResult> {
-  const fileInstructions = files
+  const copies: IAmbiguousDestination[] =  files
     .filter(filePath => !filePath.endsWith(path.sep))
     .map(filePath => {
       const fileName = path.basename(filePath);
       const knownFiles = getNameMap()[fileName];
       if (knownFiles !== undefined) {
         // replacer for a known file
-
-        let knownFile = knownFiles[0];
-        if (knownFiles.length > 1) {
-          // TODO: Could be multiple matches...
-          let knownUpdate = knownFiles.find(iter => iter.startsWith('update.rpf'));
-          if (knownUpdate !== undefined) {
-            knownFile = knownUpdate;
-          }
-          // TODO: Also, there might be multiple files, none of which is in update.rpf
-          //  common case is files existing in female and male variants
-        }
-
         return {
-          type: 'copy' as any,
           source: filePath,
-          destination: knownFile,
-        };
+          destination: knownFiles,
+        }
       } else if ((['.dll', '.asi'].indexOf(path.extname(fileName)) !== -1)
                  || (fileName === 'dlc.rpf')) {
         // pull all script hooks and dlcs to the root (of their respective
         // install location)
         return {
-          type: 'copy',
           source: filePath,
-          destination: fileName,
+          destination: [fileName],
         };
       } else {
         return {
-          type: 'copy',
           source: filePath,
-          destination: filePath,
+          destination: [filePath],
         };
-      }
+      };
     });
 
-  const result: types.IInstallResult = {
-    instructions: fileInstructions,
-  };
-  return Promise.resolve(result);
+  return disambiguateInstall(copies)
+    .then(instructions => ({
+      instructions,
+    }));
 }
 
 function mergeTest(game: types.IGame) {
@@ -472,6 +554,109 @@ function removeTempOIVs(discovery: types.IDiscoveryResult): Promise<void> {
     .then(() => Promise.resolve());
 }
 
+function genPreDeploy(api: types.IExtensionApi) {
+  return (profileId: string, lastDeployment: { [typeId: string]: types.IDeployedFile[] }) => {
+    const state = api.store.getState();
+
+    const profile: types.IProfile = selectors.profileById(state, profileId);
+    if (profile.gameId !== GAME_ID) {
+      return Promise.resolve();
+    }
+
+    const discovery: types.IDiscoveryResult = selectors.discoveryByGame(state, GAME_ID);
+    if ((discovery === undefined) || (discovery.path === undefined)) {
+      // this check shouldn't be necessary but whatevs...
+      return Promise.resolve();
+    }
+
+    // list of files we deployed
+    const whiteList = new Set<string>([].concat(...Object.values(lastDeployment))
+      .map((entry: types.IDeployedFile) => path.basename(entry.relPath)));
+
+    // clean the entire output directory to ensure the rpfs that openiv copied over get reset
+    return cleanMods(discovery, whiteList);
+  };
+}
+
+function genPostDeploy(api: types.IExtensionApi) {
+  return (profileId: string, deployment: any, progress: (title: string) => void) => {
+    const state = api.store.getState();
+
+    const profile: types.IProfile = selectors.profileById(state, profileId);
+    if (profile.gameId !== GAME_ID) {
+      return Promise.resolve();
+    }
+
+    const discovery: types.IDiscoveryResult = selectors.discoveryByGame(state, GAME_ID);
+    if ((discovery === undefined) || (discovery.path === undefined)) {
+      // this check shouldn't be necessary but whatevs...
+      return Promise.resolve();
+    }
+
+    // package content and xml file into the vortex.oiv
+    const sZip = new (util as any).SevenZip();
+    const basePath = path.join(discovery.path, 'mods', 'source');
+    const assemblyPath = path.join(basePath, 'content', 'assembly.xml');
+    // wrap up the assembly.xml file
+    return Promise.resolve(OIV.fromFile(assemblyPath, { rpfVersion: 'RPF7' }))
+      .catch({ code: 'ENOENT' }, () => Promise.reject(new util.ProcessCanceled('nothing to deploy')))
+      .then(oiv => {
+        const dlcpacksPath = path.join(discovery.path, 'mods', 'update', 'x64', 'dlcpacks');
+        return fs.readdirAsync(dlcpacksPath)
+          .filter(dlcPath => {
+            if (dlcPath === 'vortex') {
+              return Promise.resolve(false);
+            }
+            return fs.statAsync(path.join(dlcpacksPath, dlcPath)).then(stat => stat.isDirectory());
+          })
+          .then(dlcPaths => {
+            dlcPaths.forEach(dlcPath => oiv.addDLC(dlcPath));
+            oiv.addFile('frontend.ytd', path.join('x64', 'textures', 'frontend.ytd'), path.join('update', 'update.rpf'));
+          })
+          .then(() => oiv.save(assemblyPath));
+      })
+      .then(() => fs.copyAsync(path.join(__dirname, 'content', 'frontend.ytd'),
+        path.join(discovery.path, modPath(), 'frontend.ytd')))
+      .then(() => sZip.add(path.join(discovery.path, 'vortex.oiv.zip'), [
+        assemblyPath,
+        path.join(__dirname, 'content'),
+        path.join(__dirname, 'icon.png'),
+      ]))
+      .then(() => sZip.update(path.join(discovery.path, 'vortex.oiv.zip'), [
+        path.join(basePath, 'content'),
+      ]))
+      .then(() => fs.renameAsync(path.join(discovery.path, 'vortex.oiv.zip'),
+        path.join(discovery.path, 'vortex.oiv')))
+      .then(() => api.showDialog('info', 'Need to run OpenIV', {
+        bbcode: 'To complete deployment you need to run OpenIV and run the "vortex.oiv" installer. '
+          + 'During the install, please make sure you choose the option to install to the "mods" folder.'
+          + `[img width="100%"]${path.join(__dirname, 'openiv_oiv.jpg')}[/img]`,
+      }, [
+        { label: 'Cancel' },
+        { label: 'Continue' },
+      ]))
+      .then((result: types.IDialogResult) => result.action === 'Continue'
+        ? removeTempOIVs(discovery)
+          .then(() => runOpenIV(api))
+        : Promise.reject(new util.UserCanceled()))
+      .catch(util.UserCanceled, () => Promise.resolve(undefined))
+      .catch(util.ProcessCanceled, () => Promise.resolve(undefined));
+
+    /* disabled. The openiv.asi file is encrypted or compressed with an unknown format so for now
+     we need to deploy it through the OpenIV ASI Manager
+
+    // ensure the current version of OpenIV.asi is installed
+    return fs.copyAsync(path.join(openIVPath(), 'Games', 'Five', 'x64', 'OpenIV.asi'),
+                        path.join(discovery.path, 'OpenIV.asi'))
+      // we already have a notification about OpenIV being required
+      .catch({ code: 'ENOENT' }, () => null)
+      .catch(err => {
+        context.api.showErrorNotification('Failed to deploy openiv.asi', err);
+      });
+    */
+  }
+}
+
 function main(context: types.IExtensionContext) {
   context.registerGame({
     id: GAME_ID,
@@ -518,6 +703,10 @@ function main(context: types.IExtensionContext) {
   context.registerTest('openivasi', 'gamemode-activated',
                        genCheckOpenIVASI(context.api));
 
+  context.registerDialog('gta5install', InstallDialog, () => ({
+    state: installerState,
+  }));
+
   // install asi mods to the game base directory
   (context.registerModType as any)('gta5asi', 25, gameId => gameId === GAME_ID,
                                    makeGetASIPath(context.api), makeTestASI(context.api), {
@@ -545,105 +734,10 @@ function main(context: types.IExtensionContext) {
   context.registerInstaller('gta5-mod', 25, replacerTest, replacerInstaller);
 
   context.once(() => {
-    context.api.onAsync('will-deploy', (profileId: string, lastDeployment: { [typeId: string]: types.IDeployedFile[] }) => {
-      const state = context.api.store.getState();
+    context.api.onAsync('will-deploy', genPreDeploy(context.api));
+    context.api.onAsync('did-deploy', genPostDeploy(context.api));
 
-      const profile: types.IProfile = selectors.profileById(state, profileId);
-      if (profile.gameId !== GAME_ID) {
-        return Promise.resolve();
-      }
-
-      const discovery: types.IDiscoveryResult = selectors.discoveryByGame(state, GAME_ID);
-      if ((discovery === undefined) || (discovery.path === undefined)) {
-        // this check shouldn't be necessary but whatevs...
-        return Promise.resolve();
-      }
-
-      // list of files we deployed
-      const whiteList = new Set<string>([].concat(...Object.values(lastDeployment))
-        .map((entry: types.IDeployedFile) => path.basename(entry.relPath)));
-
-      // clean the entire output directory to ensure the rpfs that openiv copied over get reset
-      return cleanMods(discovery, whiteList);
-    });
-
-    context.api.onAsync('did-deploy',
-                        (profileId: string, deployment: any, progress: (title: string) => void) => {
-      const state = context.api.store.getState();
-
-      const profile: types.IProfile = selectors.profileById(state, profileId);
-      if (profile.gameId !== GAME_ID) {
-        return Promise.resolve();
-      }
-
-      const discovery: types.IDiscoveryResult = selectors.discoveryByGame(state, GAME_ID);
-      if ((discovery === undefined) || (discovery.path === undefined)) {
-        // this check shouldn't be necessary but whatevs...
-        return Promise.resolve();
-      }
-
-      // package content and xml file into the vortex.oiv
-      const sZip = new (util as any).SevenZip();
-      const basePath = path.join(discovery.path, 'mods', 'source');
-      const assemblyPath = path.join(basePath, 'content', 'assembly.xml');
-      // wrap up the assembly.xml file
-      return Promise.resolve(OIV.fromFile(assemblyPath, { rpfVersion: 'RPF7' }))
-        .catch({ code: 'ENOENT' }, () => Promise.reject(new util.ProcessCanceled('nothing to deploy')))
-        .then(oiv => {
-          const dlcpacksPath = path.join(discovery.path, 'mods', 'update', 'x64', 'dlcpacks');
-          return fs.readdirAsync(dlcpacksPath)
-            .filter(dlcPath => {
-              if (dlcPath === 'vortex') {
-                return Promise.resolve(false);
-              }
-              return fs.statAsync(path.join(dlcpacksPath, dlcPath)).then(stat => stat.isDirectory());
-            })
-            .then(dlcPaths => {
-              dlcPaths.forEach(dlcPath => oiv.addDLC(dlcPath));
-              oiv.addFile('frontend.ytd', path.join('x64', 'textures', 'frontend.ytd'), path.join('update', 'update.rpf'));
-            })
-            .then(() => oiv.save(assemblyPath));
-        })
-        .then(() => fs.copyAsync(path.join(__dirname, 'content', 'frontend.ytd'),
-                                 path.join(discovery.path, modPath(), 'frontend.ytd')))
-        .then(() => sZip.add(path.join(discovery.path, 'vortex.oiv.zip'), [
-            assemblyPath,
-            path.join(__dirname, 'content'),
-            path.join(__dirname, 'icon.png'),
-          ]))
-        .then(() => sZip.update(path.join(discovery.path, 'vortex.oiv.zip'), [
-          path.join(basePath, 'content'),
-        ]))
-        .then(() => fs.renameAsync(path.join(discovery.path, 'vortex.oiv.zip'),
-                                   path.join(discovery.path, 'vortex.oiv')))
-        .then(() => context.api.showDialog('info', 'Need to run OpenIV', {
-          bbcode: 'To complete deployment you need to run OpenIV and run the "vortex.oiv" installer. '
-                + 'During the install, please make sure you choose the option to install to the "mods" folder.'
-                + `[img width="100%"]${path.join(__dirname, 'openiv_oiv.jpg')}[/img]`,
-        }, [
-          { label: 'Cancel' },
-          { label: 'Continue' },
-        ]))
-        .then((result: types.IDialogResult) => result.action === 'Continue'
-          ? removeTempOIVs(discovery)
-            .then(() => runOpenIV(context.api))
-          : Promise.reject(new util.UserCanceled()))
-        .catch(util.UserCanceled, () => Promise.resolve(undefined))
-        .catch(util.ProcessCanceled, () => Promise.resolve(undefined));
-
-      /* disabled. The openiv.asi file is encrypted or compressed with an unknown format so for now
-       we need to deploy it through the OpenIV ASI Manager
-
-      // ensure the current version of OpenIV.asi is installed
-      return fs.copyAsync(path.join(openIVPath(), 'Games', 'Five', 'x64', 'OpenIV.asi'),
-                          path.join(discovery.path, 'OpenIV.asi'))
-        // we already have a notification about OpenIV being required
-        .catch({ code: 'ENOENT' }, () => null)
-        .catch(err => {
-          context.api.showErrorNotification('Failed to deploy openiv.asi', err);
-        });
-      */
-    });
+    context.api.setStylesheet('gta5', path.join(__dirname, 'style.scss'));
   });
 
   return true;
