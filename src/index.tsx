@@ -528,8 +528,10 @@ function main(context: types.IExtensionContext) {
                           makeGetDLCPath(context.api), makeTestDLC(context.api));
 
   // offer gta5-mods as a source for downloads
-  context.registerModSource('gta5mods', 'GTA 5 Mods', () => {
+  (context.registerModSource as any)('gta5mods', 'GTA 5 Mods', () => {
     context.api.store.dispatch((actions as any).showURL('https://gta5-mods.com'));
+  }, {
+    condition: () => selectors.activeGameId(context.api.store.getState()) === GAME_ID,
   });
 
   // display a warning about using mods online to the dashboard
