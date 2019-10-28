@@ -89,6 +89,17 @@ function runOpenIV(api: types.IExtensionApi): Promise<void> {
   return api.runExecutable(tool.path, tool.parameters, { suggestDeploy: false });
 }
 
+function scriptHookOutdated(discovery: types.IDiscoveryResult) {
+  const gtaVer = getExeVersion(path.join(discovery.path, 'GTA5.exe'));
+  let hookVer: string;
+  try {
+    hookVer = getExeVersion(path.join(discovery.path, 'ScriptHookV.dll'));
+  } catch (err) {
+    // nop
+  }
+  return hookVer !== gtaVer;
+}
+
 // check that ScriptHookV is installed
 function genCheckScriptHookV(api: types.IExtensionApi) {
   return (): Promise<types.ITestResult> => {
@@ -102,27 +113,21 @@ function genCheckScriptHookV(api: types.IExtensionApi) {
     if ((discovery === undefined) || (discovery.path === undefined)) {
       return Promise.resolve(undefined);
     }
-    const gtaVer = getExeVersion(path.join(discovery.path, 'GTA5.exe'));
-    let hookVer: string;
-    try {
-      hookVer = getExeVersion(path.join(discovery.path, 'ScriptHookV.dll'));
-    } catch (err) {
-      // nop
-    }
 
-    if (hookVer !== gtaVer) {
+    if (scriptHookOutdated(discovery)) {
       const result: types.ITestResult = {
         description: {
           short: 'ScriptHookV is missing or outdated',
           long: 'ScriptHookV is missing or outdated, this is required for many mods',
         },
         severity: 'warning',
-        automaticFix: () =>
-          (api.emitAndAwait as any)('browse-for-download', 'http://www.dev-c.com/gtav/scripthookv/',
+        automaticFix: () => !scriptHookOutdated(discovery)
+          ? Promise.resolve()
+          : (api.emitAndAwait as any)('browse-for-download', 'http://www.dev-c.com/gtav/scripthookv/',
             'Download the latest version')
-            .then(url => url === undefined
-              ? Promise.reject(new util.UserCanceled())
-              : toPromise<string>(cb => api.events.emit('start-download', [url], {}, undefined, cb)))
+            .then((url: string[]) => ((url !== undefined) && (url.length > 0))
+              ? toPromise<string>(cb => api.events.emit('start-download', url, {}, undefined, cb))
+              : Promise.reject(new util.UserCanceled()))
             .then((dlId: string) => toPromise(cb => api.events.emit('start-install-download', dlId, true, cb)))
             .then((modId: string) => {
               const profile = selectors.activeProfile(api.store.getState());
@@ -161,8 +166,10 @@ function genCheckOpenIV(api: types.IExtensionApi) {
           },
           severity: 'warning',
           automaticFix: () =>
-            api.emitAndAwait('browse-for-download', 'https://openiv.com')
-              .then(url => toPromise(cb => api.events.emit('start-download', [url], {}, undefined, cb)))
+            (api.emitAndAwait as any)('browse-for-download', 'https://openiv.com')
+              .then((url: string[]) => ((url !== undefined) && (url.length > 0))
+                ? toPromise(cb => api.events.emit('start-download', url, {}, undefined, cb))
+                : Promise.reject(new util.UserCanceled()))
               .then((dlId: string) => {
                 const state: types.IState = api.store.getState();
                 const download = state.persistent.downloads.files[dlId];
@@ -579,6 +586,7 @@ function main(context: types.IExtensionContext) {
       const assemblyPath = path.join(basePath, 'content', 'assembly.xml');
       // wrap up the assembly.xml file
       return Promise.resolve(OIV.fromFile(assemblyPath, { rpfVersion: 'RPF7' }))
+        .catch({ code: 'ENOENT' }, () => Promise.reject(new util.ProcessCanceled('nothing to deploy')))
         .then(oiv => {
           const dlcpacksPath = path.join(discovery.path, 'mods', 'update', 'x64', 'dlcpacks');
           return fs.readdirAsync(dlcpacksPath)
@@ -607,7 +615,8 @@ function main(context: types.IExtensionContext) {
         .then(() => fs.renameAsync(path.join(discovery.path, 'vortex.oiv.zip'),
                                    path.join(discovery.path, 'vortex.oiv')))
         .then(() => context.api.showDialog('info', 'Need to run OpenIV', {
-          bbcode: 'To complete deployment you need to run OpenIV and run the "vortex.oiv" installer.'
+          bbcode: 'To complete deployment you need to run OpenIV and run the "vortex.oiv" installer. '
+                + 'During the install, please make sure you choose the option to install to the "mods" folder.'
                 + `[img width="100%"]${path.join(__dirname, 'openiv_oiv.jpg')}[/img]`,
         }, [
           { label: 'Cancel' },
@@ -617,7 +626,8 @@ function main(context: types.IExtensionContext) {
           ? removeTempOIVs(discovery)
             .then(() => runOpenIV(context.api))
           : Promise.reject(new util.UserCanceled()))
-        .catch(util.UserCanceled, err => Promise.resolve(undefined));
+        .catch(util.UserCanceled, () => Promise.resolve(undefined))
+        .catch(util.ProcessCanceled, () => Promise.resolve(undefined));
 
       /* disabled. The openiv.asi file is encrypted or compressed with an unknown format so for now
        we need to deploy it through the OpenIV ASI Manager
