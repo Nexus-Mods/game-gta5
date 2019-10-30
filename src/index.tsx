@@ -78,7 +78,7 @@ function openIVTool(state: types.IState): types.IDiscoveredTool {
     .find(iter => path.basename(iter.path).toLowerCase() === 'openiv.exe');
 }
 
-function runOpenIV(api: types.IExtensionApi): Promise<void> {
+function runOpenIV(api: types.IExtensionApi, args: string[]): Promise<void> {
   const state: types.IState = api.store.getState();
 
   const tool: types.IDiscoveredTool = openIVTool(state);
@@ -86,7 +86,9 @@ function runOpenIV(api: types.IExtensionApi): Promise<void> {
     return Promise.reject(new util.SetupError('OpenIV not installed or not configured correctly'));
   }
 
-  return api.runExecutable(tool.path, tool.parameters, { suggestDeploy: false });
+  // unfortunately the order of parameters to openiv matters, we have to put .oiv files before
+  // "-core:<game name>" for it to work
+  return api.runExecutable(tool.path, [].concat(args, tool.parameters), { suggestDeploy: false });
 }
 
 function scriptHookOutdated(discovery: types.IDiscoveryResult) {
@@ -223,7 +225,7 @@ function genCheckOpenIVASI(api: types.IExtensionApi) {
                 + 'It\'s part of OpenIV but has to be installed separately using its ASI Manager (under Tools).',
           },
           severity: 'warning',
-          automaticFix: () => runOpenIV(api),
+          automaticFix: () => runOpenIV(api, []),
         };
         return Promise.resolve(result);
       });
@@ -617,43 +619,31 @@ function genPostDeploy(api: types.IExtensionApi) {
       })
       .then(() => fs.copyAsync(path.join(__dirname, 'content', 'frontend.ytd'),
         path.join(discovery.path, modPath(), 'frontend.ytd')))
-      .then(() => sZip.add(path.join(discovery.path, 'vortex.oiv.zip'), [
+      .then(() => sZip.add(path.join(discovery.path, modPath(), 'vortex.oiv.zip'), [
         assemblyPath,
         path.join(__dirname, 'content'),
-        path.join(__dirname, 'icon.png'),
+        path.join(__dirname, 'vortex.png'),
       ]))
-      .then(() => sZip.update(path.join(discovery.path, 'vortex.oiv.zip'), [
+      .then(() => sZip.update(path.join(discovery.path, modPath(), 'vortex.oiv.zip'), [
         path.join(basePath, 'content'),
       ]))
-      .then(() => fs.renameAsync(path.join(discovery.path, 'vortex.oiv.zip'),
-        path.join(discovery.path, 'vortex.oiv')))
+      .then(() => fs.renameAsync(path.join(discovery.path, modPath(), 'vortex.oiv.zip'),
+        path.join(discovery.path, modPath(), 'vortex.oiv')))
       .then(() => api.showDialog('info', 'Need to run OpenIV', {
-        bbcode: 'To complete deployment you need to run OpenIV and run the "vortex.oiv" installer. '
-          + 'During the install, please make sure you choose the option to install to the "mods" folder.'
-          + `[img width="100%"]${path.join(__dirname, 'openiv_oiv.jpg')}[/img]`,
+        bbcode: 'To complete deployment we have to to run OpenIV to import assets, this will take a bit.<br/>'
+          + 'This imports all mods at once so you don\'t have to do it for every mod you install!<br/>'
+          + 'During the install, please make sure you choose the option to install to the "mods" folder, '
+          + 'do [b]not[/b] install to the game folder.',
       }, [
         { label: 'Cancel' },
         { label: 'Continue' },
       ]))
       .then((result: types.IDialogResult) => result.action === 'Continue'
         ? removeTempOIVs(discovery)
-          .then(() => runOpenIV(api))
+          .then(() => runOpenIV(api, [ path.join(discovery.path, modPath(), 'vortex.oiv') ]))
         : Promise.reject(new util.UserCanceled()))
       .catch(util.UserCanceled, () => Promise.resolve(undefined))
       .catch(util.ProcessCanceled, () => Promise.resolve(undefined));
-
-    /* disabled. The openiv.asi file is encrypted or compressed with an unknown format so for now
-     we need to deploy it through the OpenIV ASI Manager
-
-    // ensure the current version of OpenIV.asi is installed
-    return fs.copyAsync(path.join(openIVPath(), 'Games', 'Five', 'x64', 'OpenIV.asi'),
-                        path.join(discovery.path, 'OpenIV.asi'))
-      // we already have a notification about OpenIV being required
-      .catch({ code: 'ENOENT' }, () => null)
-      .catch(err => {
-        context.api.showErrorNotification('Failed to deploy openiv.asi', err);
-      });
-    */
   }
 }
 
