@@ -721,6 +721,7 @@ function main(context: types.IExtensionContext) {
     context.api.store.dispatch((actions as any).showURL('https://gta5-mods.com'));
   }, {
     condition: () => selectors.activeGameId(context.api.store.getState()) === GAME_ID,
+    icon: '5mods',
   });
 
   // display a warning about using mods online to the dashboard
@@ -738,6 +739,10 @@ function main(context: types.IExtensionContext) {
     context.api.onAsync('did-deploy', genPostDeploy(context.api));
 
     context.api.setStylesheet('gta5', path.join(__dirname, 'style.scss'));
+    util.installIconSet('gta5-icons', path.join(__dirname, '5mods.svg'))
+      .catch(err => {
+        log('error', 'failed to load icon set', { error: err.message });
+      });
   });
 
   return true;
