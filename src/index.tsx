@@ -225,10 +225,20 @@ function genCheckOpenIVASI(api: types.IExtensionApi) {
                 + 'It\'s part of OpenIV but has to be installed separately using its ASI Manager (under Tools).',
           },
           severity: 'warning',
-          automaticFix: () => runOpenIV(api, []),
+          automaticFix: () => {
+            return fs.statAsync(openIVPath())
+              .then(() => runOpenIV(api, []))
+              .catch(() => api.showDialog('info', 'OpenIV not installed', {
+                text: 'You have to install OpenIV first.',
+              }, [
+                { label: 'Close' },
+              ]))
+              .then(() => null);
+          },
         };
         return Promise.resolve(result);
-      });
+      })
+      .catch(util.ProcessCanceled, () => null);
   };
 }
 

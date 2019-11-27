@@ -1,14 +1,14 @@
 {
   "name": "game-gta5",
   "description": "Vortex support for Grand Theft Auto V",
-  "version": "0.0.4",
+  "version": "0.0.6",
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
   "scripts": {
     "webpack": "node ./node_modules/webpack/bin/webpack --config webpack.config.js --display-error-details --progress --profile --color",
     "copy_assets": "copyfiles -f assets/* dist && copyfiles -f assets/content/* dist/content",
     "bundle7z": "7z a -t7z game-gta5.7z .\\dist\\*",
-    "build": "yarn run webpack && yarn run copy_assets && extractInfo"
+    "build": "yarn run webpack && yarn run copy_assets && extractInfo && json -f dist\\info.json -I -e \"this.name=\\\"Game: GTA V\\\"\""
   },
   "babel": {
     "presets": [
@@ -35,6 +35,7 @@
     "exe-version": "Nexus-Mods/node-exe-version",
     "fs-extra": "^8.1.0",
     "i18next": "^15.0.6",
+    "json": "^9.0.6",
     "react-dnd": "^7.4.5",
     "react-i18next": "10.9.0",
     "react-redux": "^5.0.7",
