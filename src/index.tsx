@@ -129,6 +129,9 @@ function genCheckScriptHookV(api: types.IExtensionApi) {
             'Download the latest version')
             .then((url: string[]) => ((url !== undefined) && (url.length > 0))
               ? toPromise<string>(cb => api.events.emit('start-download', url, {}, undefined, cb))
+                .catch((err: Error) => (err.name === 'DownloadIsHTML')
+                    ? Promise.reject(new util.ProcessCanceled('User didn\'t select a download'))
+                    : Promise.reject(err))
               : Promise.reject(new util.UserCanceled()))
             .then((dlId: string) => toPromise(cb => api.events.emit('start-install-download', dlId, true, cb)))
             .then((modId: string) => {
@@ -171,6 +174,9 @@ function genCheckOpenIV(api: types.IExtensionApi) {
             (api.emitAndAwait as any)('browse-for-download', 'https://openiv.com')
               .then((url: string[]) => ((url !== undefined) && (url.length > 0))
                 ? toPromise(cb => api.events.emit('start-download', url, {}, undefined, cb))
+                  .catch((err: Error) => (err.name === 'DownloadIsHTML')
+                      ? Promise.reject(new util.ProcessCanceled('User didn\'t select a download'))
+                      : Promise.reject(err))
                 : Promise.reject(new util.UserCanceled()))
               .then((dlId: string) => {
                 const state: types.IState = api.store.getState();
