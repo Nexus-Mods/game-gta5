@@ -1,6 +1,7 @@
 import GTA5Dashlet from './Dashlet';
 import InstallDialog, { IOptions, IInstallerDialogState } from './InstallDialog';
 import OIV from './oiv';
+import { isOIVInstalled, openIVPath } from './util';
 
 import * as Promise from 'bluebird';
 import getExeVersion from 'exe-version';
@@ -43,10 +44,6 @@ function findGame(): Promise<string> {
 
 function modPath(): string {
   return path.join('mods', 'source', 'content');
-}
-
-function openIVPath(): string {
-  return path.join(process.env.LOCALAPPDATA, 'New Technology Studio', 'Apps', 'OpenIV');
 }
 
 function prepareForModding(discovery: types.IDiscoveryResult): Promise<void> {
@@ -159,9 +156,11 @@ function genCheckOpenIV(api: types.IExtensionApi) {
       }
     }
 
-    return fs.statAsync(openIVPath())
-      .then(() => Promise.resolve(undefined))
-      .catch({ code: 'ENOENT' }, () => {
+    return isOIVInstalled()
+      .then(installed => {
+        if (installed) {
+          return Promise.resolve(undefined);
+        }
         const result: types.ITestResult = {
           description: {
             short: 'OpenIV is missing',
@@ -616,51 +615,57 @@ function genPostDeploy(api: types.IExtensionApi) {
     const basePath = path.join(discovery.path, 'mods', 'source');
     const assemblyPath = path.join(basePath, 'content', 'assembly.xml');
     // wrap up the assembly.xml file
-    return Promise.resolve(OIV.fromFile(assemblyPath, { rpfVersion: 'RPF7' }))
-      .catch({ code: 'ENOENT' }, () => Promise.reject(new util.ProcessCanceled('nothing to deploy')))
-      .then(oiv => {
-        const dlcpacksPath = path.join(discovery.path, 'mods', 'update', 'x64', 'dlcpacks');
-        return fs.readdirAsync(dlcpacksPath)
-          .filter(dlcPath => {
-            if (dlcPath === 'vortex') {
-              return Promise.resolve(false);
-            }
-            return fs.statAsync(path.join(dlcpacksPath, dlcPath)).then(stat => stat.isDirectory());
+    return isOIVInstalled()
+      .then(installed => {
+        if (!installed) {
+          return Promise.resolve();
+        }
+        return Promise.resolve(OIV.fromFile(assemblyPath, { rpfVersion: 'RPF7' }))
+          .catch({ code: 'ENOENT' }, () => Promise.reject(new util.ProcessCanceled('nothing to deploy')))
+          .then(oiv => {
+            const dlcpacksPath = path.join(discovery.path, 'mods', 'update', 'x64', 'dlcpacks');
+            return fs.readdirAsync(dlcpacksPath)
+              .filter(dlcPath => {
+                if (dlcPath === 'vortex') {
+                  return Promise.resolve(false);
+                }
+                return fs.statAsync(path.join(dlcpacksPath, dlcPath)).then(stat => stat.isDirectory());
+              })
+              .then(dlcPaths => {
+                dlcPaths.forEach(dlcPath => oiv.addDLC(dlcPath));
+                oiv.addFile('frontend.ytd', path.join('x64', 'textures', 'frontend.ytd'), path.join('update', 'update.rpf'));
+              })
+              .then(() => oiv.save(assemblyPath));
           })
-          .then(dlcPaths => {
-            dlcPaths.forEach(dlcPath => oiv.addDLC(dlcPath));
-            oiv.addFile('frontend.ytd', path.join('x64', 'textures', 'frontend.ytd'), path.join('update', 'update.rpf'));
-          })
-          .then(() => oiv.save(assemblyPath));
-      })
-      .then(() => fs.copyAsync(path.join(__dirname, 'content', 'frontend.ytd'),
-        path.join(discovery.path, modPath(), 'frontend.ytd')))
-      .then(() => sZip.add(path.join(discovery.path, modPath(), 'vortex.oiv.zip'), [
-        assemblyPath,
-        path.join(__dirname, 'content'),
-        path.join(__dirname, 'vortex.png'),
-      ]))
-      .then(() => sZip.update(path.join(discovery.path, modPath(), 'vortex.oiv.zip'), [
-        path.join(basePath, 'content'),
-      ]))
-      .then(() => fs.renameAsync(path.join(discovery.path, modPath(), 'vortex.oiv.zip'),
-        path.join(discovery.path, modPath(), 'vortex.oiv')))
-      .then(() => api.showDialog('info', 'Need to run OpenIV', {
-        bbcode: 'To complete deployment we have to to run OpenIV to import assets, this will take a bit.<br/>'
-          + 'This imports all mods at once so you don\'t have to do it for every mod you install!<br/>'
-          + 'During the install, please make sure you choose the option to install to the "mods" folder, '
-          + 'do [b]not[/b] install to the game folder.',
-      }, [
-        { label: 'Cancel' },
-        { label: 'Continue' },
-      ]))
-      .then((result: types.IDialogResult) => result.action === 'Continue'
-        ? removeTempOIVs(discovery)
-          .then(() => runOpenIV(api, [ path.join(discovery.path, modPath(), 'vortex.oiv') ]))
-        : Promise.reject(new util.UserCanceled()))
-      .catch(util.UserCanceled, () => Promise.resolve(undefined))
-      .catch(util.ProcessCanceled, () => Promise.resolve(undefined));
-  }
+          .then(() => fs.copyAsync(path.join(__dirname, 'content', 'frontend.ytd'),
+            path.join(discovery.path, modPath(), 'frontend.ytd')))
+          .then(() => sZip.add(path.join(discovery.path, modPath(), 'vortex.oiv.zip'), [
+            assemblyPath,
+            path.join(__dirname, 'content'),
+            path.join(__dirname, 'vortex.png'),
+          ]))
+          .then(() => sZip.update(path.join(discovery.path, modPath(), 'vortex.oiv.zip'), [
+            path.join(basePath, 'content'),
+          ]))
+          .then(() => fs.renameAsync(path.join(discovery.path, modPath(), 'vortex.oiv.zip'),
+            path.join(discovery.path, modPath(), 'vortex.oiv')))
+          .then(() => api.showDialog('info', 'Need to run OpenIV', {
+            bbcode: 'To complete deployment we have to to run OpenIV to import assets, this will take a bit.<br/>'
+              + 'This imports all mods at once so you don\'t have to do it for every mod you install!<br/>'
+              + 'During the install, please make sure you choose the option to install to the "mods" folder, '
+              + 'do [b]not[/b] install to the game folder.',
+          }, [
+            { label: 'Cancel' },
+            { label: 'Continue' },
+          ]))
+          .then((result: types.IDialogResult) => result.action === 'Continue'
+            ? removeTempOIVs(discovery)
+              .then(() => runOpenIV(api, [path.join(discovery.path, modPath(), 'vortex.oiv')]))
+            : Promise.reject(new util.UserCanceled()))
+          .catch(util.UserCanceled, () => Promise.resolve(undefined))
+          .catch(util.ProcessCanceled, () => Promise.resolve(undefined));
+      });
+    };
 }
 
 function main(context: types.IExtensionContext) {
