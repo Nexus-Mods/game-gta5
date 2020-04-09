@@ -46,8 +46,8 @@
     "turbowalk": "Nexus-Mods/node-turbowalk",
     "typescript": "^3.6.4",
     "vortex-api": "Nexus-Mods/vortex-api",
-    "webpack": "^4.29.6",
-    "webpack-cli": "^3.3.9",
+    "webpack": "^4.42.1",
+    "webpack-cli": "^3.3.11",
     "xml2js": "^0.4.22"
   }
 }
