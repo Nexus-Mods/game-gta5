@@ -550,6 +550,8 @@ function cleanMods(discovery: types.IDiscoveryResult, whitelist: Set<string>): P
       .map(iter => iter.filePath));
   })
   .then(() => Promise.map(toRemove, filePath => fs.removeAsync(filePath)))
+  // if the mods path is not found that's fine, nothing to clean up in that case
+  .catch({ code: 'ENOTFOUND' }, () => null)
   .then(() => prepareForModding(discovery));
 }
 
@@ -658,10 +660,16 @@ function genPostDeploy(api: types.IExtensionApi) {
             { label: 'Cancel' },
             { label: 'Continue' },
           ]))
-          .then((result: types.IDialogResult) => result.action === 'Continue'
+          .then((result: types.IDialogResult) => (result.action === 'Continue')
             ? removeTempOIVs(discovery)
               .then(() => runOpenIV(api, [path.join(discovery.path, modPath(), 'vortex.oiv')]))
             : Promise.reject(new util.UserCanceled()))
+          .catch(util.SetupError, () => {
+            api.showErrorNotification('OpenIV not set up',
+              'To deploy mods OpenIV has to be installed and set up correctly as a tool in the dashboard. '
+              + 'Please check that you can run OpenIV from the dashboard and then try again.',
+              { allowReport: false });
+          })
           .catch(util.UserCanceled, () => Promise.resolve(undefined))
           .catch(util.ProcessCanceled, () => Promise.resolve(undefined));
       });
