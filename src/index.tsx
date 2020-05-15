@@ -38,7 +38,7 @@ const getAssetExts = (() => {
 })();
 
 function findGame(): Promise<string> {
-  return util.steam.findByName('Grand Theft Auto V')
+  return util.GameStoreHelper.findByName(['Grand Theft Auto V'])
       .then(game => game.gamePath);
 }
 
@@ -689,8 +689,7 @@ function main(context: types.IExtensionContext) {
       '-scOfflineOnly',
     ],
     requiredFiles: [
-      'GTA5.exe',
-      'GTAVLauncher.exe'
+      'GTA5.exe'
     ],
     supportedTools: [
       {
