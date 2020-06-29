@@ -161,6 +161,9 @@ class OIV {
   private mData: IOIVFormat;
   private mOptions: IOIVOptions;
   constructor(parsed: IOIVFormat, options: IOIVOptions) {
+    if (!parsed) {
+      throw new Error('invalid assembly data');
+    }
     this.mData = parsed;
     this.mOptions = options;
   }
@@ -198,6 +201,9 @@ class OIV {
   public merge(oivPath: string, sourcePrefix: string): Promise<void> {
     return OIV.fromFile(path.join(oivPath, 'assembly.xml'), this.mOptions)
       .then(oiv => {
+        if (this.mData.package.content[0] === '') {
+          this.mData.package.content[0] = {};
+        }
         const lhs = this.mData.package.content[0];
         const rhs = oiv.mData.package.content[0];
         if (rhs.add !== undefined) {

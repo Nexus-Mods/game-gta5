@@ -1,13 +1,13 @@
 {
   "name": "game-gta5",
   "description": "Vortex support for Grand Theft Auto V",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
   "scripts": {
     "webpack": "node ./node_modules/webpack/bin/webpack --config webpack.config.js --display-error-details --progress --profile --color",
     "copy_assets": "copyfiles -f assets/* dist && copyfiles -f assets/content/* dist/content",
-    "bundle7z": "7z a -t7z game-gta5.7z .\\dist\\*",
+    "bundle7z": "rimraf .\\dist\\content && del game-gta5.7z && 7z a -t7z game-gta5.7z .\\dist\\*",
     "build": "yarn run webpack && yarn run copy_assets && extractInfo && json -f dist\\info.json -I -e \"this.name=\\\"Game: GTA V\\\"\""
   },
   "babel": {
