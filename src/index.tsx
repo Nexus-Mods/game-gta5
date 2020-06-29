@@ -88,17 +88,6 @@ function runOpenIV(api: types.IExtensionApi, args: string[]): Promise<void> {
   return api.runExecutable(tool.path, [].concat(args, tool.parameters), { suggestDeploy: false });
 }
 
-function scriptHookOutdated(discovery: types.IDiscoveryResult) {
-  const gtaVer = getExeVersion(path.join(discovery.path, 'GTA5.exe'));
-  let hookVer: string;
-  try {
-    hookVer = getExeVersion(path.join(discovery.path, 'ScriptHookV.dll'));
-  } catch (err) {
-    // nop
-  }
-  return hookVer !== gtaVer;
-}
-
 // check that ScriptHookV is installed
 function genCheckScriptHookV(api: types.IExtensionApi) {
   return (): Promise<types.ITestResult> => {
@@ -113,16 +102,41 @@ function genCheckScriptHookV(api: types.IExtensionApi) {
       return Promise.resolve(undefined);
     }
 
-    if (scriptHookOutdated(discovery)) {
+    const gtaVer = getExeVersion(path.join(discovery.path, 'GTA5.exe'));
+    let hookVer: string;
+    try {
+      hookVer = getExeVersion(path.join(discovery.path, 'ScriptHookV.dll'));
+    } catch (err) {
+      // nop
+    }
+
+    if (hookVer !== gtaVer) {
       const result: types.ITestResult = {
         description: {
-          short: 'ScriptHookV is missing or outdated',
-          long: 'ScriptHookV is missing or outdated, this is required for many mods',
+          short: hookVer === undefined
+            ? 'ScriptHookV is missing'
+            : 'ScriptHookV is outdated',
+          long: hookVer === undefined
+            ? 'ScriptHookV is missing. This is required for many mods.'
+            : 'ScriptHookV is outdated. The game is version {{gtaVer}}, '
+              + 'the hook version {{hookVer}} ',
+          replace: {
+            gtaVer,
+            hookVer,
+          }
         },
         severity: 'warning',
-        automaticFix: () => !scriptHookOutdated(discovery)
+        automaticFix: () => {
+          // update the hook version because the user might have updated/deployed
+          // in the meantime
+          try {
+            hookVer = getExeVersion(path.join(discovery.path, 'ScriptHookV.dll'));
+          } catch (err) {
+            // nop
+          }
+          return (hookVer === gtaVer)
           ? Promise.resolve()
-          : (api.emitAndAwait as any)('browse-for-download', 'http://www.dev-c.com/gtav/scripthookv/',
+          : api.emitAndAwait('browse-for-download', 'http://www.dev-c.com/gtav/scripthookv/',
             'Download the latest version')
             .then((url: string[]) => ((url !== undefined) && (url.length > 0))
               ? toPromise<string>(cb => api.events.emit('start-download', url, {}, undefined, cb))
@@ -136,7 +150,8 @@ function genCheckScriptHookV(api: types.IExtensionApi) {
               api.store.dispatch(actions.setModType(GAME_ID, modId, 'gta5asi'));
               api.store.dispatch(actions.setModEnabled(profile.id, modId, true));
               return toPromise(cb => api.events.emit('deploy-mods', cb));
-            }),
+            });
+          },
       };
       return Promise.resolve(result);
     }
