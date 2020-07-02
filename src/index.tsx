@@ -279,11 +279,12 @@ function makeTestASI(api: types.IExtensionApi) {
   return (installInstructions: types.IInstruction[]): Promise<boolean> => {
     const assetExts = getAssetExts();
     const hasASI = installInstructions.find(iter =>
-      (iter.destination !== undefined)
+      !!iter.destination
       && (ext(iter.destination) === '.asi')) !== undefined;
     const hasAssets = installInstructions.find(iter =>
-      (assetExts.indexOf(ext(iter.destination)) !== -1)
-      || (ext(iter.destination) === '.rpf')) !== undefined;
+      !!iter.destination
+      && ((assetExts.indexOf(ext(iter.destination)) !== -1)
+          || (ext(iter.destination) === '.rpf'))) !== undefined;
     return Promise.resolve(hasASI && !hasAssets);
   };
 }
@@ -303,7 +304,7 @@ function makeGetDLCPath(api: types.IExtensionApi) {
 function makeTestDLC(api: types.IExtensionApi) {
   return (installInstructions: types.IInstruction[]): Promise<boolean> => {
     const hasDLC = installInstructions.find(iter =>
-      (iter.destination !== undefined)
+      !!iter.destination
       && (path.basename(iter.destination).toLowerCase() === 'dlc.rpf')) !== undefined;
     return Promise.resolve(hasDLC);
   };
