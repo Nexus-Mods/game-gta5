@@ -205,7 +205,7 @@ class OIV {
           this.mData.package.content[0] = {};
         }
         const lhs = this.mData.package.content[0];
-        const rhs = oiv.mData.package.content[0];
+        const rhs = oiv.mData.package?.content?.[0] || {};
         if (rhs.add !== undefined) {
           lhs.add = (lhs.add || []).concat(...rhs.add.map(iter => this.updateSource(iter, sourcePrefix)));
         }
