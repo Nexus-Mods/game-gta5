@@ -11,6 +11,7 @@ import { actions, fs, log, util, types, selectors } from 'vortex-api';
 
 const GAME_ID = 'gta5';
 const RPF_PATH = path.join('update', 'x64', 'dlcpacks', 'vortex', 'dlc.rpf');
+const SCRIPTHOOK_URL = 'http://www.dev-c.com/gtav/scripthookv/';
 
 const getNameMap = (() => {
   let result: { [key: string]: string[] };
@@ -136,10 +137,13 @@ function genCheckScriptHookV(api: types.IExtensionApi) {
           }
           return (hookVer === gtaVer)
           ? Promise.resolve()
-          : api.emitAndAwait('browse-for-download', 'http://www.dev-c.com/gtav/scripthookv/',
+          : api.emitAndAwait('browse-for-download', SCRIPTHOOK_URL,
             'Download the latest version')
-            .then((url: string[]) => ((url !== undefined) && (url.length > 0))
-              ? toPromise<string>(cb => api.events.emit('start-download', url, {}, undefined, cb))
+            .then((urls: string[]) => (!!urls && (urls.length > 0))
+              ? toPromise<string>(cb => {
+                urls = urls.map(url => url.includes('<') ? url : url + '<' + SCRIPTHOOK_URL);
+                api.events.emit('start-download', urls, {}, undefined, cb);
+              })
                 .catch((err: Error) => (err.name === 'DownloadIsHTML')
                     ? Promise.reject(new util.ProcessCanceled('User didn\'t select a download'))
                     : Promise.reject(err))
@@ -729,6 +733,10 @@ function main(context: types.IExtensionContext) {
       steamAppId: 271590,
       stopPatterns: ['[^/]*\\.rpf', '[^/]*\\.asi'],
       supportsSymlinks: false,
+    },
+    compatible: {
+      symlinks: false,
+      usvfs: false,
     },
     deploymentGate: () => deploymentGate(context.api),
   } as any);
