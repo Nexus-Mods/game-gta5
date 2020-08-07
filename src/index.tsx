@@ -609,7 +609,11 @@ function genPreDeploy(api: types.IExtensionApi) {
       .map((entry: types.IDeployedFile) => path.basename(entry.relPath)));
 
     // clean the entire output directory to ensure the rpfs that openiv copied over get reset
-    return cleanMods(discovery, whiteList);
+    return cleanMods(discovery, whiteList)
+      .catch(util.UserCanceled, () => null)
+      .catch(err => {
+        log('error', 'failed to clean gtav mods', { error: err.message });
+      });
   };
 }
 
