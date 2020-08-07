@@ -201,7 +201,7 @@ class OIV {
   public merge(oivPath: string, sourcePrefix: string): Promise<void> {
     return OIV.fromFile(path.join(oivPath, 'assembly.xml'), this.mOptions)
       .then(oiv => {
-        if (this.mData.package.content[0] === '') {
+        if (this.mData.package?.content?.[0] === '') {
           this.mData.package.content[0] = {};
         }
         const lhs = this.mData.package.content[0];
