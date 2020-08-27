@@ -97,7 +97,9 @@ class InstallDialog extends ComponentEx<IProps, IInstallDialogState> {
   }
 
   private apply = () => {
-    this.props.state.callback(null, this.state.choices);
+    if (this.props.state.callback !== undefined) {
+      this.props.state.callback(null, this.state.choices);
+    }
   }
 
   private changeOption = (choice: { value: string, label: string, idx: number }) => {
