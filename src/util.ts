@@ -1,9 +1,20 @@
 import * as Promise from 'bluebird';
 import * as path from 'path';
-import { fs } from 'vortex-api';
+import { fs, util } from 'vortex-api';
+
+const localAppData: () => string = (() => {
+  let cached: string;
+  return () => {
+    if (cached === undefined) {
+      cached = process.env.LOCALAPPDATA
+        || path.resolve(util.getVortexPath('appData'), '..', 'Local');
+    }
+    return cached;
+  };
+})();
 
 export function openIVPath(): string {
-  return path.join(process.env.LOCALAPPDATA, 'New Technology Studio', 'Apps', 'OpenIV');
+  return path.join(localAppData(), 'New Technology Studio', 'Apps', 'OpenIV');
 }
 
 export function isOIVInstalled(): Promise<boolean> {
