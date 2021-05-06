@@ -35,7 +35,7 @@
     "exe-version": "Nexus-Mods/node-exe-version",
     "fs-extra": "^8.1.0",
     "i18next": "^15.0.6",
-    "json": "^9.0.6",
+    "json": "^10.0.0",
     "react-dnd": "^7.4.5",
     "react-i18next": "10.9.0",
     "react-redux": "^5.0.7",
