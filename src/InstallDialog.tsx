@@ -75,7 +75,7 @@ class InstallDialog extends ComponentEx<IProps, IInstallDialogState> {
                         <Select
                           className='select-compact'
                           options={opt.options.map(iter => ({ idx, value: iter, label: iter }))}
-                          value={choices[idx].choice}
+                          value={choices[idx]?.choice}
                           onChange={this.changeOption}
                           clearable={false}
                           autosize={false}
