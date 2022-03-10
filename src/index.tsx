@@ -626,7 +626,7 @@ function genPostDeploy(api: types.IExtensionApi) {
     const state = api.store.getState();
 
     const profile: types.IProfile = selectors.profileById(state, profileId);
-    if (profile.gameId !== GAME_ID) {
+    if (profile?.gameId !== GAME_ID) {
       return Promise.resolve();
     }
 
