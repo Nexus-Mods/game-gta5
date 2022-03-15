@@ -280,15 +280,17 @@ function makeGetASIPath(api: types.IExtensionApi) {
 
 function makeTestASI(api: types.IExtensionApi) {
   const ext = input => path.extname(input).toLowerCase();
+
   return (installInstructions: types.IInstruction[]): Promise<boolean> => {
     const assetExts = getAssetExts();
-    const hasASI = installInstructions.find(iter =>
-      !!iter.destination
-      && (ext(iter.destination) === '.asi')) !== undefined;
-    const hasAssets = installInstructions.find(iter =>
-      !!iter.destination
-      && ((assetExts.indexOf(ext(iter.destination)) !== -1)
-          || (ext(iter.destination) === '.rpf'))) !== undefined;
+    const isASICopy = (iter: types.IInstruction) => !!iter.destination &&
+      (ext(iter.destination) === '.asi');
+    const isAssetCopy = (iter: types.IInstruction) => !!iter.destination &&
+      (assetExts.includes(ext(iter.destination)) || (ext(iter.destination) === '.rpf'));
+
+    const hasASI = installInstructions.find(isASICopy) !== undefined;
+    const hasAssets = installInstructions.find(isAssetCopy) !== undefined
+
     return Promise.resolve(hasASI && !hasAssets);
   };
 }
@@ -307,9 +309,9 @@ function makeGetDLCPath(api: types.IExtensionApi) {
 
 function makeTestDLC(api: types.IExtensionApi) {
   return (installInstructions: types.IInstruction[]): Promise<boolean> => {
-    const hasDLC = installInstructions.find(iter =>
-      !!iter.destination
-      && (path.basename(iter.destination).toLowerCase() === 'dlc.rpf')) !== undefined;
+    const isDLCCopy = (iter: types.IInstruction) => !!iter.destination &&
+      (path.basename(iter.destination).toLowerCase() === 'dlc.rpf');
+    const hasDLC = installInstructions.find(isDLCCopy) != undefined;
     return Promise.resolve(hasDLC);
   };
 }
@@ -754,8 +756,8 @@ function main(context: types.IExtensionContext) {
   }));
 
   // install asi mods to the game base directory
-  (context.registerModType as any)('gta5asi', 25, gameId => gameId === GAME_ID,
-                                   makeGetASIPath(context.api), makeTestASI(context.api), {
+  context.registerModType('gta5asi', 25, gameId => gameId === GAME_ID,
+                          makeGetASIPath(context.api), makeTestASI(context.api), {
     mergeMods: true,
   });
 

@@ -1,7 +1,7 @@
 {
   "name": "game-gta5",
   "description": "Vortex support for Grand Theft Auto V",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
   "scripts": {
