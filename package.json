@@ -31,7 +31,7 @@
     "babel-loader": "^7.1.4",
     "bluebird": "^3.7.1",
     "copyfiles": "^2.1.1",
-    "electron": "^15.5.5",
+    "electron": "^18.3.7",
     "exe-version": "Nexus-Mods/node-exe-version",
     "fs-extra": "^8.1.0",
     "i18next": "^15.0.6",
